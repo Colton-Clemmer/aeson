@@ -27,7 +27,7 @@ import Prelude.Compat
 
 import Control.Applicative (Const)
 import Control.Monad (forM, forM_, when)
-import Data.Aeson ((.=), (.:), (.:?), (.:!), (.:?), (.!=), FromJSON(..), FromJSONKeyFunction(..), FromJSONKey(..), ToJSON1(..), decode, eitherDecode, encode, fromJSON, genericParseJSON, genericToEncoding, genericToJSON, object, withObject, withEmbeddedJSON, withEachKV)
+import Data.Aeson ((.=), (.:), (.:?), (.:!), (.:?), (.!=), FromJSON(..), FromJSONKeyFunction(..), FromJSONKey(..), ToJSON1(..), decode, eitherDecode, encode, fromJSON, genericParseJSON, genericToEncoding, genericToJSON, object, withObject, withEmbeddedJSON  )
 import Data.Aeson.Internal (JSONPathElement(..), formatError)
 import Data.Aeson.TH (deriveJSON, deriveToJSON, deriveToJSON1)
 import Data.Aeson.Text (encodeToTextBuilder)
@@ -832,19 +832,23 @@ ioTests = do
   return [enc, js]
 
 data FooBar = FooBar {
-  name :: K.Key,
   num :: Int,
   pog :: Bool
 } deriving (Generic, Show, Eq)
 
-data FooBars = FooBars { bars :: [FooBar] }
-instance FromJSON FooBars where
-  parseJSON = fmap FooBars . withEachKV "fooBars" parseBar
-    where
-    parseBar n = withObject "fooBars" $ \o -> do
+-- data FooBars = FooBars { bars :: Map.Map Text FooBar } deriving (Generic, Show, Eq)
+-- instance FromJSON FooBars where
+--   parseJSON = fmap FooBars . withEachKV "fooBars" parseBar
+--     where
+--     parseBar n = withObject "fooBars" $ \o -> do
+--       numV <- o .: "num"
+--       pogV <- o .:? "pog" .!= False
+--       return $ FooBar n numV pogV
+instance FromJSON FooBar where
+  parseJSON = withObject "fooBars" $ \o -> do
       numV <- o .: "num"
       pogV <- o .:? "pog" .!= False
-      return $ FooBar n numV pogV
+      return $ FooBar numV pogV
 
 kVTestS :: String
 kVTestS = "{"
@@ -855,37 +859,35 @@ kVTestS = "{"
 
 tFoo :: FooBar
 tFoo = FooBar {
-  name = "foo",
   num = 1,
   pog = True
 }
 
 tBar :: FooBar
 tBar = FooBar {
-  name = "bar",
   num = 2,
   pog = False
 }
 
 tBaz :: FooBar
 tBaz = FooBar {
-  name = "baz",
   num = 3,
   pog = False
 }
 
 withEachKVTests :: Assertion
 withEachKVTests = do
-  let mFooBars = decode (L.pack kVTestS) :: Maybe FooBars
+  let mFooBars = decode (L.pack kVTestS) :: Maybe (KM.KeyMap FooBar)
+  -- print mFooBars
   isJust mFooBars @?= True
   let fooBars = fromJust mFooBars
-  let mFoo = find (\(FooBar n _ _) -> n == "foo") . bars $ fooBars
+  let mFoo = KM.lookup "foo" $ fooBars
   isJust mFoo @?= True
   let foo = fromJust mFoo
-  let mBar = find (\(FooBar n _ _) -> n == "bar") . bars $ fooBars
+  let mBar = KM.lookup "bar" $ fooBars
   isJust mBar @?= True
   let bar = fromJust mBar
-  let mBaz = find (\(FooBar n _ _) -> n == "baz") . bars $ fooBars
+  let mBaz = KM.lookup "baz" $ fooBars
   isJust mBaz @?= True
   let baz = fromJust mBaz
   tFoo @?= foo
