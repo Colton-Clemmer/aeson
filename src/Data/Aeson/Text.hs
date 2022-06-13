@@ -60,6 +60,7 @@ encodeToTextBuilder =
     go (Bool b)   = if b then "true" else "false"
     go (Number s) = fromScientific s
     go (String s) = string s
+    go (URI uri)  = string . T.pack . show $ uri
     go (Array v)
         | V.null v = "[]"
         | otherwise = 

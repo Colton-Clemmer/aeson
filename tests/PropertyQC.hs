@@ -88,6 +88,7 @@ instance ShrinkMetric Value where
     metric Null        = 0
     metric (Bool b)    = 1 + metric b
     metric (String t)  = 1 + metric t
+    metric (URI uri)   = 1 + (metric . T.pack . show $ uri)
     metric (Number n)  = 1 + metric n
     metric (Array xs)  = foldl' (\acc x -> acc + 1 + metric x) 1 xs
     metric (Object xs) = ifoldl' (\k acc x -> acc + metric (k, x)) 1 xs
