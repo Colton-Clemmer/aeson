@@ -70,6 +70,7 @@ encodeToBuilder Null       = null_
 encodeToBuilder (Bool b)   = bool b
 encodeToBuilder (Number n) = scientific n
 encodeToBuilder (String s) = text s
+encodeToBuilder (URI uri)  = text . T.pack . show $ uri
 encodeToBuilder (Array v)  = array v
 encodeToBuilder (Object m) = object m
 

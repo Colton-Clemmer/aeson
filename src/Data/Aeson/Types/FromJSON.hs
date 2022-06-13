@@ -539,6 +539,7 @@ typeOf v = case v of
     Object _ -> "Object"
     Array _  -> "Array"
     String _ -> "String"
+    URI _    -> "URI"
     Number _ -> "Number"
     Bool _   -> "Boolean"
     Null     -> "Null"
