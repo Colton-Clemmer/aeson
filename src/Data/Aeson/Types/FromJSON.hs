@@ -53,6 +53,7 @@ module Data.Aeson.Types.FromJSON
     , withScientific
     , withBool
     , withEmbeddedJSON
+    , withEachKV
 
     -- * Functions
     , fromJSON
@@ -776,6 +777,11 @@ withEmbeddedJSON _ innerParser (String txt) =
         eitherDecode = eitherFormatError . eitherDecodeWith jsonEOF ifromJSON
         eitherFormatError = either (Left . uncurry formatError) Right
 withEmbeddedJSON name _ v = prependContext name (typeMismatch "String" v)
+
+withEachKV :: String -> (Key -> Value -> Parser a) -> Value -> Parser [a]
+withEachKV label p = withObject label $ mapM parseKV . KM.toList
+  where
+    parseKV (k, v) = p k v <?> Key k
 
 -- | Convert a value from JSON, failing if the types do not match.
 fromJSON :: (FromJSON a) => Value -> Result a

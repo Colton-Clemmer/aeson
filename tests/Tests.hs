@@ -12,5 +12,6 @@ import qualified UnitTests
 main :: IO ()
 main = do
     ioTests <- UnitTests.ioTests
-    let allTests = DF.tests : Properties.tests : UnitTests.tests : ioTests
+    -- let allTests = DF.tests : Properties.tests : UnitTests.tests : ioTests
+    let allTests = UnitTests.tests : []
     defaultMain (testGroup "tests" allTests)

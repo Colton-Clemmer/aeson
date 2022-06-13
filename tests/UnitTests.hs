@@ -27,9 +27,8 @@ import Prelude.Compat
 
 import Control.Applicative (Const)
 import Control.Monad (forM, forM_, when)
-import Data.Aeson ((.=), (.:), (.:?), (.:!), FromJSON(..), FromJSONKeyFunction(..), FromJSONKey(..), ToJSON1(..), decode, eitherDecode, encode, fromJSON, genericParseJSON, genericToEncoding, genericToJSON, object, withObject, withEmbeddedJSON)
+import Data.Aeson ((.=), (.:), (.:?), (.:!), (.:?), (.!=), FromJSON(..), FromJSONKeyFunction(..), FromJSONKey(..), ToJSON1(..), decode, eitherDecode, encode, fromJSON, genericParseJSON, genericToEncoding, genericToJSON, object, withObject, withEmbeddedJSON, withEachKV)
 import Data.Aeson.Internal (JSONPathElement(..), formatError)
-import Data.Aeson.QQ.Simple (aesonQQ)
 import Data.Aeson.TH (deriveJSON, deriveToJSON, deriveToJSON1)
 import Data.Aeson.Text (encodeToTextBuilder)
 import Data.Aeson.Parser
@@ -40,6 +39,7 @@ import Data.Aeson.Types
   , Value(Array, Bool, Null, Number, Object, String), camelTo, camelTo2
   , explicitParseField, liftParseJSON, listParser
   , defaultOptions, formatPath, formatRelativePath, omitNothingFields, parse, parseMaybe)
+import qualified Data.Aeson.Key as K
 import qualified Data.Aeson.Types
 import qualified Data.Aeson.KeyMap as KM
 import Data.Attoparsec.ByteString (Parser, parseOnly)
@@ -47,8 +47,8 @@ import Data.Char (toUpper, GeneralCategory(Control,Surrogate), generalCategory)
 import Data.Either.Compat (isLeft, isRight)
 import Data.Hashable (hash)
 import Data.HashMap.Strict (HashMap)
-import Data.List (sort, isSuffixOf)
-import Data.Maybe (fromMaybe)
+import Data.List (sort, isSuffixOf, find)
+import Data.Maybe (fromMaybe, isJust, fromJust)
 import Data.Scientific (Scientific, scientific)
 import Data.Tagged (Tagged(..))
 import Data.Text (Text)
@@ -831,57 +831,121 @@ ioTests = do
   js <- jsonTestSuite
   return [enc, js]
 
+data FooBar = FooBar {
+  name :: K.Key,
+  num :: Int,
+  pog :: Bool
+} deriving (Generic, Show, Eq)
+
+data FooBars = FooBars { bars :: [FooBar] }
+instance FromJSON FooBars where
+  parseJSON = fmap FooBars . withEachKV "fooBars" parseBar
+    where
+    parseBar n = withObject "fooBars" $ \o -> do
+      numV <- o .: "num"
+      pogV <- o .:? "pog" .!= False
+      return $ FooBar n numV pogV
+
+kVTestS :: String
+kVTestS = "{"
+  ++ "\"foo\": { \"num\": 1, \"pog\": true },"
+  ++ "\"bar\": { \"num\": 2 },"
+  ++ "\"baz\": { \"num\": 3, \"pog\": false }"
+  ++ "}"
+
+tFoo :: FooBar
+tFoo = FooBar {
+  name = "foo",
+  num = 1,
+  pog = True
+}
+
+tBar :: FooBar
+tBar = FooBar {
+  name = "bar",
+  num = 2,
+  pog = False
+}
+
+tBaz :: FooBar
+tBaz = FooBar {
+  name = "baz",
+  num = 3,
+  pog = False
+}
+
+withEachKVTests :: Assertion
+withEachKVTests = do
+  let mFooBars = decode (L.pack kVTestS) :: Maybe FooBars
+  isJust mFooBars @?= True
+  let fooBars = fromJust mFooBars
+  let mFoo = find (\(FooBar n _ _) -> n == "foo") . bars $ fooBars
+  isJust mFoo @?= True
+  let foo = fromJust mFoo
+  let mBar = find (\(FooBar n _ _) -> n == "bar") . bars $ fooBars
+  isJust mBar @?= True
+  let bar = fromJust mBar
+  let mBaz = find (\(FooBar n _ _) -> n == "baz") . bars $ fooBars
+  isJust mBaz @?= True
+  let baz = fromJust mBaz
+  tFoo @?= foo
+  tBar @?= bar
+  tBaz @?= baz
+
 tests :: TestTree
 tests = testGroup "unit" [
-    testGroup "SerializationFormatSpec" SerializationFormatSpec.tests
-  , testGroup "ErrorMessages" ErrorMessages.tests
-  , testGroup "camelCase" [
-      testCase "camelTo" $ roundTripCamel "aName"
-    , testCase "camelTo" $ roundTripCamel "another"
-    , testCase "camelTo" $ roundTripCamel "someOtherName"
-    , testCase "camelTo" $
-        assertEqual "" "camel_apicase" (camelTo '_' "CamelAPICase")
-    , testCase "camelTo2" $ roundTripCamel2 "aName"
-    , testCase "camelTo2" $ roundTripCamel2 "another"
-    , testCase "camelTo2" $ roundTripCamel2 "someOtherName"
-    , testCase "camelTo2" $
-        assertEqual "" "camel_api_case" (camelTo2 '_' "CamelAPICase")
-    ]
-  , testGroup "encoding" [
-      testCase "goodProducer" goodProducer
-    ]
-  , testGroup "utctime" [
-      testCase "good" utcTimeGood
-    , testCase "bad"  utcTimeBad
-    ]
-  , testGroup "formatError" [
-      testCase "example 1" formatErrorExample
-    ]
-  , testGroup ".:, .:?, .:!" $ fmap (testCase "-") dotColonMark
-  , testGroup "Hashable laws" $ fmap (testCase "-") hashableLaws
-  , testGroup "Object construction" $ fmap (testCase "-") objectConstruction
-  , testGroup "Issue #351" $ fmap (testCase "-") issue351
-  , testGroup "Nullary constructors" $ fmap (testCase "-") nullaryConstructors
-  , testGroup "FromJSONKey" $ fmap (testCase "-") fromJSONKeyAssertions
-  , testCase "PR #455" pr455
-  , testCase "Unescape string (PR #477)" unescapeString
-  , testCase "Show Options" showOptions
-  , testGroup "SingleMaybeField" singleMaybeField
-  , testCase "withEmbeddedJSON" withEmbeddedJSONTest
-  , testCase "SingleFieldCon" singleFieldCon
-  , testGroup "UnknownFields" unknownFields
-  , testGroup "Ordering of object keys" keyOrdering
-  , testCase "Ratio with denominator 0" ratioDenominator0
-  , testCase "Rational parses number"   rationalNumber
-  , testCase "Big rational"             bigRationalDecoding
-  , testCase "Small rational"           smallRationalDecoding
-  , testCase "Big scientific exponent" bigScientificExponent
-  , testCase "Big integer decoding" bigIntegerDecoding
-  , testCase "Big natural decading" bigNaturalDecoding
-  , testCase "Big integer key decoding" bigIntegerKeyDecoding
-  , testGroup "QQ.Simple"
-    [ testCase "example" $
-      assertEqual "" (object ["foo" .= True]) [aesonQQ| {"foo": true } |]
-    ]
-  , monadFixTests
+  testGroup "withEachKV" [
+    testCase "one" withEachKVTests
+  ]
+  --   testGroup "SerializationFormatSpec" SerializationFormatSpec.tests
+  -- , testGroup "ErrorMessages" ErrorMessages.tests
+  -- , testGroup "camelCase" [
+  --     testCase "camelTo" $ roundTripCamel "aName"
+  --   , testCase "camelTo" $ roundTripCamel "another"
+  --   , testCase "camelTo" $ roundTripCamel "someOtherName"
+  --   , testCase "camelTo" $
+  --       assertEqual "" "camel_apicase" (camelTo '_' "CamelAPICase")
+  --   , testCase "camelTo2" $ roundTripCamel2 "aName"
+  --   , testCase "camelTo2" $ roundTripCamel2 "another"
+  --   , testCase "camelTo2" $ roundTripCamel2 "someOtherName"
+  --   , testCase "camelTo2" $
+  --       assertEqual "" "camel_api_case" (camelTo2 '_' "CamelAPICase")
+  --   ]
+  -- , testGroup "encoding" [
+  --     testCase "goodProducer" goodProducer
+  --   ]
+  -- , testGroup "utctime" [
+  --     testCase "good" utcTimeGood
+  --   , testCase "bad"  utcTimeBad
+  --   ]
+  -- , testGroup "formatError" [
+  --     testCase "example 1" formatErrorExample
+  --   ]
+  -- , testGroup ".:, .:?, .:!" $ fmap (testCase "-") dotColonMark
+  -- , testGroup "Hashable laws" $ fmap (testCase "-") hashableLaws
+  -- , testGroup "Object construction" $ fmap (testCase "-") objectConstruction
+  -- , testGroup "Issue #351" $ fmap (testCase "-") issue351
+  -- , testGroup "Nullary constructors" $ fmap (testCase "-") nullaryConstructors
+  -- , testGroup "FromJSONKey" $ fmap (testCase "-") fromJSONKeyAssertions
+  -- , testCase "PR #455" pr455
+  -- , testCase "Unescape string (PR #477)" unescapeString
+  -- , testCase "Show Options" showOptions
+  -- , testGroup "SingleMaybeField" singleMaybeField
+  -- , testCase "withEmbeddedJSON" withEmbeddedJSONTest
+  -- , testCase "SingleFieldCon" singleFieldCon
+  -- , testGroup "UnknownFields" unknownFields
+  -- , testGroup "Ordering of object keys" keyOrdering
+  -- , testCase "Ratio with denominator 0" ratioDenominator0
+  -- , testCase "Rational parses number"   rationalNumber
+  -- , testCase "Big rational"             bigRationalDecoding
+  -- , testCase "Small rational"           smallRationalDecoding
+  -- , testCase "Big scientific exponent" bigScientificExponent
+  -- , testCase "Big integer decoding" bigIntegerDecoding
+  -- , testCase "Big natural decading" bigNaturalDecoding
+  -- , testCase "Big integer key decoding" bigIntegerKeyDecoding
+  -- , testGroup "QQ.Simple"
+  --   [ testCase "example" $
+  --     assertEqual "" (object ["foo" .= True]) [aesonQQ| {"foo": true } |]
+  --   ]
+  -- , monadFixTests
   ]

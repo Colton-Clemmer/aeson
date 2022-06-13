@@ -137,6 +137,7 @@ module Data.Aeson
     , withScientific
     , withBool
     , withEmbeddedJSON
+    , withEachKV
     -- * Constructors and accessors
     , Series
     , pairs
@@ -154,7 +155,7 @@ module Data.Aeson
 
 import Prelude.Compat
 
-import Data.Aeson.Types.FromJSON (ifromJSON, parseIndexedJSON)
+import Data.Aeson.Types.FromJSON (ifromJSON, parseIndexedJSON, withEachKV)
 import Data.Aeson.Encoding (encodingToLazyByteString)
 import Data.Aeson.Parser.Internal (decodeWith, decodeStrictWith, eitherDecodeWith, eitherDecodeStrictWith, jsonEOF, json, jsonEOF', json')
 import Data.Aeson.Types
