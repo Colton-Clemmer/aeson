@@ -35,7 +35,6 @@ module Data.Aeson.Types.Internal
     , Pair
     , Object
     , emptyObject
-    , JsonURI
 
     -- * Type conversion
     , Parser
@@ -98,7 +97,7 @@ import Data.Data (Data)
 import Data.Foldable (foldl')
 import Data.Hashable (Hashable(..))
 import Data.List (intercalate)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Data.Scientific (Scientific)
 import Data.String (IsString(..))
 import Data.Text (Text, pack, unpack)
@@ -378,39 +377,23 @@ type Object = KeyMap Value
 -- | A JSON \"array\" (sequence).
 type Array = Vector Value
 
-newtype JsonURI = JsonURI NetworkURI.URI deriving (Eq, Data, Ord)
-
 -- | A JSON value represented as a Haskell value.
 data Value = Object !Object
            | Array !Array
            | String !Text
-           | URI !JsonURI
+           | URI !NetworkURI.URI
            | Number !Scientific
            | Bool !Bool
            | Null
-             deriving (Eq, Read, Typeable, Data, Generic)
+             deriving (Eq, Typeable, Data, Generic)
 
-showURI :: JsonURI -> String
-showURI (JsonURI (NetworkURI.URI _ Nothing _ _ _)) = "Invalid URI"
-showURI (JsonURI (NetworkURI.URI uScheme (Just (NetworkURI.URIAuth aInfo aReg aPort)) uPath uQuery frag)) =
-    uScheme ++ aInfo ++ aReg ++ aPort ++ uPath ++ uQuery ++ frag
+instance Read Value where
+    readsPrec _ v 
+        | isJust uri = return (URI . fromJust $ uri, "")
+        | otherwise = read v
+        where 
+            uri = NetworkURI.parseURI v
 
-instance Read JsonURI where
-    readsPrec _ s
-        | NetworkURI.isURI s = [((JsonURI (fromJust (NetworkURI.parseURI s))), s)]
-        | otherwise = []
-
-instance Show JsonURI where
-    showsPrec _ s = showString . showURI $ s
-
--- | Since version 1.5.6.0 version object values are printed in lexicographic key order
---
--- >>> toJSON $ H.fromList [("a", True), ("z", False)]
--- Object (fromList [("a",Bool True),("z",Bool False)])
---
--- >>> toJSON $ H.fromList [("z", False), ("a", True)]
--- Object (fromList [("a",Bool True),("z",Bool False)])
---
 instance Show Value where
     showsPrec _ Null = showString "Null"
     showsPrec d (Bool b) = showParen (d > 10)
@@ -420,7 +403,7 @@ instance Show Value where
     showsPrec d (String s) = showParen (d > 10)
         $ showString "String " . showsPrec 11 s
     showsPrec d (URI uri) = showParen (d > 10)
-        $ showString "URI " . showsPrec 11 (showURI uri)
+        $ showString "URI " . showsPrec 11 (show uri)
     showsPrec d (Array xs) = showParen (d > 10)
         $ showString "Array " . showsPrec 11 xs
     showsPrec d (Object xs) = showParen (d > 10)
@@ -436,7 +419,7 @@ instance QC.Arbitrary Value where
         go Null       = []
         go (Bool b)   = Null : map Bool (QC.shrink b)
         go (String x) = Null : map (String . T.pack) (QC.shrink (T.unpack x))
-        go (URI uri)  = Null : map (String . T.pack) (QC.shrink (showURI uri))
+        go (URI uri)  = Null : map (String . T.pack) (QC.shrink (show uri))
         go (Number x) = Null : map Number (shrScientific x)
         go (Array x)  = Null : V.toList x ++ map (Array . V.fromList) (QC.liftShrink go (V.toList x))
         go (Object x) = Null : KM.elems x ++ map (Object . KM.fromList) (QC.liftShrink (QC.liftShrink go) (KM.toList x))
@@ -446,7 +429,7 @@ instance QC.CoArbitrary Value where
     coarbitrary Null       = QC.variant (0 :: Int)
     coarbitrary (Bool b)   = QC.variant (1 :: Int) . QC.coarbitrary b
     coarbitrary (String x) = QC.variant (2 :: Int) . QC.coarbitrary (T.unpack x)
-    coarbitrary (URI uri)  = QC.variant (6 :: Int) . QC.coarbitrary (showURI uri)
+    coarbitrary (URI uri)  = QC.variant (6 :: Int) . QC.coarbitrary (show uri)
     coarbitrary (Number x) = QC.variant (3 :: Int) . QC.coarbitrary (Sci.coefficient x) . QC.coarbitrary (Sci.base10Exponent x)
     coarbitrary (Array x)  = QC.variant (4 :: Int) . QC.coarbitrary (V.toList x)
     coarbitrary (Object x) = QC.variant (5 :: Int) . QC.coarbitrary (KM.toList x)
@@ -458,7 +441,7 @@ instance QC.Function Value where
         fwd Null       = Left Nothing
         fwd (Bool b)   = Left (Just b)
         fwd (String x) = Right (Left (Left (T.unpack x)))
-        fwd (URI uri)  = Right (Left (Left (showURI uri)))
+        fwd (URI uri)  = Right (Left (Left (show uri)))
         fwd (Number x) = Right (Left (Right (Sci.coefficient x, Sci.base10Exponent x)))
         fwd (Array x)  = Right (Right (Left (V.toList x)))
         fwd (Object x) = Right (Right (Right (KM.toList x)))
@@ -546,7 +529,7 @@ instance NFData Value where
     rnf (Object o) = rnf o
     rnf (Array a)  = foldl' (\x y -> rnf y `seq` x) () a
     rnf (String s) = rnf s
-    rnf (URI uri)  = rnf (showURI uri)
+    rnf (URI uri)  = rnf (show uri)
     rnf (Number n) = rnf n
     rnf (Bool b)   = rnf b
     rnf Null       = ()
@@ -560,7 +543,7 @@ hashValue s (Object o)   = s `hashWithSalt` (0::Int) `hashWithSalt` o
 hashValue s (Array a)    = foldl' hashWithSalt
                               (s `hashWithSalt` (1::Int)) a
 hashValue s (String str) = s `hashWithSalt` (2::Int) `hashWithSalt` str
-hashValue s (URI uri)    = s `hashWithSalt` (6::Int) `hashWithSalt` (showURI uri)
+hashValue s (URI uri)    = s `hashWithSalt` (6::Int) `hashWithSalt` (show uri)
 hashValue s (Number n)   = s `hashWithSalt` (3::Int) `hashWithSalt` n
 hashValue s (Bool b)     = s `hashWithSalt` (4::Int) `hashWithSalt` b
 hashValue s Null         = s `hashWithSalt` (5::Int)
@@ -576,7 +559,7 @@ instance TH.Lift Value where
     lift (String t) = [| String (pack s) |]
       where s = unpack t
     lift (URI uri)  = [| String (pack s) |]
-      where s = showURI uri
+      where s = show uri
     lift (Array a)  = [| Array (V.fromList a') |]
       where a' = V.toList a
     lift (Object o) = [| Object o |]
