@@ -51,15 +51,17 @@ import Prelude.Compat
 
 import Control.Applicative ((<|>))
 import Control.Monad (void, when)
-import Data.Aeson.Types.Internal (IResult(..), JSONPath, Object, Result(..), Value(..), Key)
+import Data.Aeson.Types.Internal (IResult(..), JSONPath, Object, Result(..), Value(..), Key, JsonURI)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as Key
 import Data.Attoparsec.ByteString.Char8 (Parser, char, decimal, endOfInput, isDigit_w8, signed, string)
 import Data.Function (fix)
 import Data.Functor.Compat (($>))
+import Data.Maybe (isJust, fromJust)
 import Data.Scientific (Scientific)
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Data.Vector (Vector)
+import qualified Network.URI as U
 import qualified Data.Vector as Vector (empty, fromList, fromListN, reverse)
 import qualified Data.Attoparsec.ByteString as A
 import qualified Data.Attoparsec.Lazy as L
@@ -239,7 +241,11 @@ jsonWith mkObject = fix $ \value_ -> do
   skipSpace
   w <- A.peekWord8'
   case w of
-    DOUBLE_QUOTE  -> A.anyWord8 *> (String <$> jstring_)
+    DOUBLE_QUOTE  -> A.anyWord8 *> do
+      s <- jstring_
+      let mUri = U.parseURI . unpack $ s
+      if (isJust mUri) then return . URI . read . unpack $ s
+      else return $ String s
     OPEN_CURLY    -> A.anyWord8 *> object_ mkObject value_
     OPEN_SQUARE   -> A.anyWord8 *> array_ value_
     C_f           -> string "false" $> Bool False

@@ -35,6 +35,7 @@ module Data.Aeson.Types.Internal
     , Pair
     , Object
     , emptyObject
+    , JsonURI
 
     -- * Type conversion
     , Parser
