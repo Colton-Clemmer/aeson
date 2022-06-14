@@ -241,11 +241,32 @@ jsonWith mkObject = fix $ \value_ -> do
   skipSpace
   w <- A.peekWord8'
   case w of
-    DOUBLE_QUOTE  -> A.anyWord8 *> do
-      s <- jstring_
-      let mUri = U.parseURI . unpack $ s
-      if (isJust mUri) then return . URI . read . unpack $ s
-      else return $ String s
+    -- A.anyWord8 :: Parser Word8 
+    -- jstring_ :: Parser Text
+    -- 
+    --DOUBLE_QUOTE  -> A.anyWord8 >> jstring_ >>= \s -> return $ U.parseURI s >>= \x -> String ""
+    --DOUBLE_QUOTE  -> A.anyWord8 >> jstring_ >>= \s -> return $ String s
+    DOUBLE_QUOTE  -> A.anyWord8 >> jstring_ >>= \s -> return . aux $ s
+      where
+        aux :: Text -> Value
+        aux s
+          | isJust u = URI (fromJust u)
+          | otherwise = String s
+            where
+              u = U.parseURI . unpack $ s
+    -- DOUBLE_QUOTE  -> A.anyWord8 >> jstring_ >>= \s -> return . aux $ s
+    --   where
+    --     aux :: Text -> Value
+    --     aux s
+    --       | U.isURI . unpack $ s = URI . read . unpack $ s
+    --       | otherwise = String s
+    -- DOUBLE_QUOTE  -> A.anyWord8 >> jstring_ >>= (\s -> return $ String s)
+    -- DOUBLE_QUOTE  -> do
+    --   A.anyWord8
+    --   s <- jstring_
+    --   let mUri = U.parseURI . unpack $ s
+    --   if (isJust mUri) then return . URI . read . unpack $ s
+    --   else return $ String s
     OPEN_CURLY    -> A.anyWord8 *> object_ mkObject value_
     OPEN_SQUARE   -> A.anyWord8 *> array_ value_
     C_f           -> string "false" $> Bool False
