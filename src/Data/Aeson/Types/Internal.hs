@@ -107,6 +107,7 @@ import Data.Typeable (Typeable)
 import Data.Vector (Vector)
 import GHC.Generics (Generic)
 import Data.Aeson.KeyMap (KeyMap)
+import Text.Read (readMaybe)
 import qualified Network.URI as NetworkURI
 import qualified Control.Monad as Monad
 import qualified Control.Monad.Fail as Fail
@@ -389,10 +390,24 @@ data Value = Object !Object
 
 instance Read Value where
     readsPrec _ v 
-        | isJust uri = return (URI . fromJust $ uri, "")
-        | otherwise = read v
+        | v == "Null" = return (Null, "")
+        | not isShown && isJust uri = return (URI . fromJust $ uri, "")
+        | not isShown = decode v
+        | vType == "Bool" = return (Bool ((T.toLower (T.pack vValue)) == (T.pack "true")), "")
+        | vType == "Number" = return (Number (read vValue), "")
+        | vType == "String" = return (String (T.pack vValue), "")
+        | vType == "URI" = return (URI . fromJust $ valueUri, "")
+        | otherwise = return (String . pack $ v, "")
         where 
+            isShown = vType == "Bool" 
+                || vType == "Number"
+                || vType == "String"
+                || vType == "URI"
+            vType = T.unpack . head . T.split (==' ') . T.pack $ v
+            vValue = concat . map unpack . tail . T.split (==' ') . T.pack $ v
+            -- mr = readMaybe . head . tail (T.split (==' ') v)
             uri = NetworkURI.parseURI v
+            valueUri = NetworkURI.parseURI vValue
 
 instance Show Value where
     showsPrec _ Null = showString "Null"

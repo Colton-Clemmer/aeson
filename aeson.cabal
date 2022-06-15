@@ -219,6 +219,7 @@ test-suite aeson-tests
     , unordered-containers
     , uuid-types
     , vector
+    , network-uri
 
 source-repository head
   type:     git

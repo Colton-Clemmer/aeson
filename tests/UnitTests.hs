@@ -37,10 +37,11 @@ import Data.Aeson.Parser
   , json', jsonLast', jsonAccum', jsonNoDup')
 import Data.Aeson.Types
   ( Options(..), Result(Success, Error), ToJSON(..)
-  , Value(Array, Bool, Null, Number, Object, String), camelTo, camelTo2
+  , Value(Array, Bool, Null, Number, Object, String, URI), camelTo, camelTo2
   , explicitParseField, liftParseJSON, listParser
   , defaultOptions, formatPath, formatRelativePath, omitNothingFields, parse, parseMaybe)
 import qualified Data.Aeson.Types
+import qualified Data.Aeson.Key as K
 import qualified Data.Aeson.KeyMap as KM
 import Data.Attoparsec.ByteString (Parser, parseOnly)
 import Data.Char (toUpper, GeneralCategory(Control,Surrogate), generalCategory)
@@ -48,7 +49,7 @@ import Data.Either.Compat (isLeft, isRight)
 import Data.Hashable (hash)
 import Data.HashMap.Strict (HashMap)
 import Data.List (sort, isSuffixOf)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, fromJust)
 import Data.Scientific (Scientific, scientific)
 import Data.Tagged (Tagged(..))
 import Data.Text (Text)
@@ -63,6 +64,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertFailure, assertEqual, testCase, (@?=))
 import Text.Printf (printf)
 import UnitTests.NullaryConstructors (nullaryConstructors)
+import qualified Network.URI as NetworkURI
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Base16.Lazy as LBase16
 import qualified Data.ByteString.Lazy.Char8 as L
@@ -75,6 +77,7 @@ import qualified Data.Vector as Vector
 import qualified ErrorMessages
 import qualified SerializationFormatSpec
 import qualified Data.Map as Map -- Lazy!
+import Data.Aeson (Object)
 
 roundTripCamel :: String -> Assertion
 roundTripCamel name = assertEqual "" name (camelFrom '_' $ camelTo '_' name)
@@ -808,6 +811,22 @@ monadFixParserB = withObject "Rec" $ \obj -> mdo
         Nothing   -> fail "No foo node"
         Just root -> return root
 
+testUri :: Assertion
+testUri = do
+  let ghUri = "http://www.github.com"
+  let jsonS = L.pack $ "{ \"uri\": \"" ++ ghUri ++ "\", \"s\": \"string\"}"
+  let mJson = decode jsonS
+  True @?= isJust mJson
+  let mUri = KM.lookup (K.fromString "uri") . fromJust $ mJson
+  True @?= isJust mUri
+  let gh = NetworkURI.parseURI ghUri
+  True @?= isJust gh
+  URI (fromJust gh) @?= fromJust mUri
+  let mS = KM.lookup (K.fromString "s") . fromJust $ mJson
+  True @?= isJust mS
+  String "string" @?= fromJust mS
+  True @?= True
+
 monadFixTests :: TestTree
 monadFixTests = testGroup "MonadFix"
     [ testCase "Example1a" $ monadFixDecoding1 monadFixParserA
@@ -833,6 +852,7 @@ ioTests = do
 
 tests :: TestTree
 tests = testGroup "unit" [
+  testCase "Test URI" testUri,
     testGroup "SerializationFormatSpec" SerializationFormatSpec.tests
   , testGroup "ErrorMessages" ErrorMessages.tests
   , testGroup "camelCase" [
